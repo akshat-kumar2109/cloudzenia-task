@@ -1,0 +1,91 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.env
+.env.local
+.env.*.local
+*.log
+logs
+coverage/
+.nyc_output
+
+# Terraform
+.terraform/
+.terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraformrc
+terraform.rc
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ansible
+*.retry
+ansible/*.log
+ansible/*.pid
+ansible/*.pyc
+ansible/__pycache__/
+ansible/roles/**/*.pyc
+ansible/vault_password_file
+ansible/inventory.ini
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.bak
+*.sublime-workspace
+*.sublime-project
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Keys and Certificates
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.priv
+id_rsa*
+id_dsa*
+known_hosts
+authorized_keys
+deployer-key
+
+# Build and Dist directories
+dist/
+build/
+out/
+target/
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Misc
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+*.tmp
+*.bak
+*.backup
+.cache/
+tmp/ 
