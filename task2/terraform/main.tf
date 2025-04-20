@@ -85,6 +85,7 @@ module "ec2" {
   instance_type      = var.instance_type
   domain_name        = var.domain_name
   ecr_url           = module.ecr.repository_url
+  acm_certificate_arn = module.acm.certificate_arn
   alb_target_group_arns = [
     module.alb.docker_target_group_arn,
     module.alb.instance_target_group_arn
