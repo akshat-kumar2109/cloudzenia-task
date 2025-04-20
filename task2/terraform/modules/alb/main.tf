@@ -14,11 +14,13 @@ resource "aws_lb" "main" {
   }
 }
 
-# ALB Listener (HTTP)
-resource "aws_lb_listener" "http" {
+# ALB Listener (HTTPS)
+resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
-  port              = "80"
-  protocol          = "HTTP"
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = var.certificate_arn
 
   default_action {
     type = "fixed-response"
@@ -31,23 +33,47 @@ resource "aws_lb_listener" "http" {
   }
 }
 
+# HTTP to HTTPS redirect
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
 # Target Groups
 resource "aws_lb_target_group" "docker" {
-  name     = "${var.project}-${var.environment}-docker-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = var.vpc_id
+  name                 = "${var.project}-${var.environment}-docker-tg"
+  port                 = 80
+  protocol             = "HTTP"
+  vpc_id               = var.vpc_id
+  deregistration_delay = 30
 
   health_check {
     enabled             = true
     healthy_threshold   = 2
     interval            = 30
-    matcher            = "200"
-    path               = "/health"
+    matcher            = "200,302,404"
+    path               = "/"
     port               = "traffic-port"
     protocol           = "HTTP"
-    timeout            = 5
-    unhealthy_threshold = 2
+    timeout            = 10
+    unhealthy_threshold = 5
+  }
+
+  stickiness {
+    type            = "lb_cookie"
+    cookie_duration = 86400
+    enabled         = true
   }
 
   tags = {
@@ -57,21 +83,28 @@ resource "aws_lb_target_group" "docker" {
 }
 
 resource "aws_lb_target_group" "instance" {
-  name     = "${var.project}-${var.environment}-instance-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = var.vpc_id
+  name                 = "${var.project}-${var.environment}-instance-tg"
+  port                 = 80
+  protocol             = "HTTP"
+  vpc_id               = var.vpc_id
+  deregistration_delay = 30
 
   health_check {
     enabled             = true
     healthy_threshold   = 2
     interval            = 30
-    matcher            = "200"
-    path               = "/health"
+    matcher            = "200,302,404"
+    path               = "/"
     port               = "traffic-port"
     protocol           = "HTTP"
-    timeout            = 5
-    unhealthy_threshold = 2
+    timeout            = 10
+    unhealthy_threshold = 5
+  }
+
+  stickiness {
+    type            = "lb_cookie"
+    cookie_duration = 86400
+    enabled         = true
   }
 
   tags = {
@@ -80,10 +113,10 @@ resource "aws_lb_target_group" "instance" {
   }
 }
 
-# Listener Rules
-resource "aws_lb_listener_rule" "docker" {
-  listener_arn = aws_lb_listener.http.arn
-  priority     = 100
+# Listener Rules for HTTPS
+resource "aws_lb_listener_rule" "docker_https" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 1
 
   action {
     type             = "forward"
@@ -100,9 +133,9 @@ resource "aws_lb_listener_rule" "docker" {
   }
 }
 
-resource "aws_lb_listener_rule" "instance" {
-  listener_arn = aws_lb_listener.http.arn
-  priority     = 200
+resource "aws_lb_listener_rule" "instance_https" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 2
 
   action {
     type             = "forward"
