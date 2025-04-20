@@ -41,4 +41,9 @@ variable "alb_target_group_arns" {
 variable "ecr_url" {
   description = "URL of the ECR repository"
   type        = string
+}
+
+variable "acm_certificate_arn" {
+  description = "ARN of the ACM certificate to use for HTTPS"
+  type        = string
 } 

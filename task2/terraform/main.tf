@@ -92,16 +92,16 @@ module "ec2" {
 }
 
 # Route53 Module
-module "route53" {
-  source = "./modules/route53"
+# module "route53" {
+#   source = "./modules/route53"
 
-  domain_name    = var.domain_name
-  environment    = var.environment
-  alb_dns_name   = module.alb.alb_dns_name
-  alb_zone_id    = module.alb.alb_zone_id
-  zone_id        = module.acm.zone_id
-  ec2_instances  = module.ec2.instances
-}
+#   domain_name    = var.domain_name
+#   environment    = var.environment
+#   alb_dns_name   = module.alb.alb_dns_name
+#   alb_zone_id    = module.alb.alb_zone_id
+#   zone_id        = module.acm.zone_id
+#   ec2_instances  = module.ec2.instances
+# }
 
 # CloudWatch Module
 module "cloudwatch" {

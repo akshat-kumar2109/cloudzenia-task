@@ -18,9 +18,11 @@ resource "aws_instance" "main" {
   iam_instance_profile        = aws_iam_instance_profile.instance_profile.name
 
   user_data = templatefile("${path.module}/templates/user_data.sh.tpl", {
-    instance_number = count.index + 1
-    domain_name    = var.domain_name
-    ecr_url        = var.ecr_url
+    instance_number      = count.index + 1
+    domain_name         = var.domain_name
+    ecr_url            = var.ecr_url
+    acm_certificate_arn = var.acm_certificate_arn
+    aws_region         = data.aws_region.current.name
   })
 
   root_block_device {
@@ -51,6 +53,9 @@ resource "aws_eip_association" "main" {
   instance_id   = aws_instance.main[count.index].id
   allocation_id = aws_eip.main[count.index].id
 }
+
+# Get current AWS region
+data "aws_region" "current" {}
 
 # Latest Ubuntu AMI
 data "aws_ami" "ubuntu" {
