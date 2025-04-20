@@ -113,70 +113,38 @@ http {
     include             /etc/nginx/mime.types;
     default_type        application/octet-stream;
 
+    # SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:50m;
+    ssl_session_tickets off;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+
     include /etc/nginx/conf.d/*.conf;
 }
 EOL
 
 # Create NGINX server configuration
 cat > /etc/nginx/conf.d/default.conf << 'EOL'
-# Default server
+# Default server to redirect HTTP to HTTPS
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
-
-    # Redirect all HTTP traffic to HTTPS
     return 301 https://$host$request_uri;
 }
 
-# Default HTTPS server
-server {
-    listen 443 ssl default_server;
-    listen [::]:443 ssl default_server;
-    server_name _;
-
-    ssl_certificate /etc/nginx/certs/fullchain.crt;
-    ssl_certificate_key /etc/nginx/certs/server.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
-    ssl_session_tickets off;
-    ssl_stapling on;
-    ssl_stapling_verify on;
-
-    access_log /var/log/nginx/default.access.log main;
-    error_log /var/log/nginx/default.error.log debug;
-
-    return 404;
-}
-
-# Instance server
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ec2-instance${instance_number}.${domain_name} ec2-alb-instance.${domain_name};
-    
-    # Redirect all HTTP traffic to HTTPS
-    return 301 https://$host$request_uri;
-}
-
+# Instance server (direct)
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name ec2-instance${instance_number}.${domain_name} ec2-alb-instance.${domain_name};
+    server_name ec2-instance${instance_number}.${domain_name};
 
     ssl_certificate /etc/nginx/certs/fullchain.crt;
     ssl_certificate_key /etc/nginx/certs/server.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
-    ssl_session_tickets off;
-    ssl_stapling on;
-    ssl_stapling_verify on;
 
     access_log /var/log/nginx/instance.access.log main;
     error_log /var/log/nginx/instance.error.log debug;
@@ -187,34 +155,63 @@ server {
     }
 }
 
-# Docker server
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ec2-docker${instance_number}.${domain_name} ec2-alb-docker.${domain_name};
-    
-    # Redirect all HTTP traffic to HTTPS
-    return 301 https://$host$request_uri;
-}
-
+# Docker server (direct)
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name ec2-docker${instance_number}.${domain_name} ec2-alb-docker.${domain_name};
+    server_name ec2-docker${instance_number}.${domain_name};
 
     ssl_certificate /etc/nginx/certs/fullchain.crt;
     ssl_certificate_key /etc/nginx/certs/server.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
-    ssl_session_tickets off;
-    ssl_stapling on;
-    ssl_stapling_verify on;
 
     access_log /var/log/nginx/docker.access.log main;
     error_log /var/log/nginx/docker.error.log debug;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60;
+        proxy_connect_timeout 60;
+        proxy_send_timeout 60;
+    }
+}
+
+# ALB Instance server
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ec2-alb-instance.${domain_name};
+
+    ssl_certificate /etc/nginx/certs/fullchain.crt;
+    ssl_certificate_key /etc/nginx/certs/server.key;
+
+    access_log /var/log/nginx/alb-instance.access.log main;
+    error_log /var/log/nginx/alb-instance.error.log debug;
+
+    location / {
+        add_header Content-Type text/plain;
+        return 200 'Hello from Instance';
+    }
+}
+
+# ALB Docker server
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ec2-alb-docker.${domain_name};
+
+    ssl_certificate /etc/nginx/certs/fullchain.crt;
+    ssl_certificate_key /etc/nginx/certs/server.key;
+
+    access_log /var/log/nginx/alb-docker.access.log main;
+    error_log /var/log/nginx/alb-docker.error.log debug;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
