@@ -86,13 +86,13 @@ resource "aws_lb_target_group" "wordpress" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
-    interval            = 30
+    interval            = 35
     matcher            = "200,301,302"
     path               = "/"
     port               = "traffic-port"
     protocol           = "HTTP"
-    timeout            = 5
-    unhealthy_threshold = 2
+    timeout            = 30
+    unhealthy_threshold = 5
   }
 
   tags = {
@@ -112,13 +112,13 @@ resource "aws_lb_target_group" "microservice" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
-    interval            = 30
-    matcher            = "200"
+    interval            = 35
+    matcher            = "200,301,302"
     path               = "/api/health"
     port               = "traffic-port"
     protocol           = "HTTP"
-    timeout            = 5
-    unhealthy_threshold = 2
+    timeout            = 30
+    unhealthy_threshold = 5
   }
 
   tags = {
@@ -194,4 +194,4 @@ resource "aws_lb_listener" "http" {
       status_code = "HTTP_301"
     }
   }
-} 
+}

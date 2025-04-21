@@ -43,7 +43,17 @@ variable "ecr_url" {
   type        = string
 }
 
-variable "acm_certificate_arn" {
-  description = "ARN of the ACM certificate to use for HTTPS"
+variable "private_key_path" {
+  description = "Path to SSL private key file"
   type        = string
-} 
+}
+
+variable "certificate_chain_path" {
+  description = "Path to SSL certificate file"
+  type        = string
+}
+
+variable "nat_gateway_id" {
+  description = "ID of the NAT Gateway to ensure it exists before creating EC2 instances"
+  type        = string
+}

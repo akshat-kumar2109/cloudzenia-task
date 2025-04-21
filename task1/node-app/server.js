@@ -17,6 +17,6 @@ app.get('/', (req, res) => {
   res.redirect('/api');
 });
 
-app.listen(port, () => {
-  console.log(`Microservice listening at http://localhost:${port}`);
+app.listen(port, "0.0.0.0", () => {
+  console.log(`Microservice listening at http://0.0.0.0:${port}`);
 }); 

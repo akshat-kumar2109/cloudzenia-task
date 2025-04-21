@@ -32,3 +32,13 @@ variable "domain_name" {
   description = "Base domain name"
   type        = string
 } 
+
+variable "ec2_instance1_id" {
+  description = "ID of the first EC2 instance"
+  type        = string
+}
+
+variable "ec2_instance2_id" {
+  description = "ID of the second EC2 instance"
+  type        = string
+}

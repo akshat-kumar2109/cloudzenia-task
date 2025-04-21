@@ -8,7 +8,7 @@ resource "aws_key_pair" "deployer" {
 module "network" {
   source = "./modules/network"
 
-  environment      = var.environment
+  environment     = var.environment
   project         = var.project
   vpc_cidr        = var.vpc_cidr
   azs             = var.availability_zones
@@ -20,11 +20,11 @@ module "network" {
 module "jumpbox" {
   source = "./modules/jumpbox"
 
-  environment           = var.environment
-  project              = var.project
-  vpc_id               = module.network.vpc_id
-  public_subnet_id     = module.network.public_subnets[0]
-  key_name             = aws_key_pair.deployer.key_name
+  environment             = var.environment
+  project                 = var.project
+  vpc_id                  = module.network.vpc_id
+  public_subnet_id        = module.network.public_subnets[0]
+  key_name                = aws_key_pair.deployer.key_name
   allowed_ssh_cidr_blocks = [var.my_ip_cidr]
 }
 
@@ -32,32 +32,32 @@ module "jumpbox" {
 module "security" {
   source = "./modules/security"
 
-  environment             = var.environment
-  project                = var.project
-  vpc_id                 = module.network.vpc_id
+  environment               = var.environment
+  project                   = var.project
+  vpc_id                    = module.network.vpc_id
   jumpbox_security_group_id = module.jumpbox.jumpbox_security_group_id
 }
 
 # ACM Module for SSL Certificate
-module "acm" {
-  source = "../../task1/terraform/modules/acm"
+# module "acm" {
+#   source = "../../task1/terraform/modules/acm"
 
-  domain_name            = var.domain_name
-  environment           = var.environment
-  private_key_path      = var.private_key_path
-  certificate_path      = var.certificate_path
-  certificate_chain_path = var.certificate_chain_path
-  tags = {
-    Environment = var.environment
-  }
-}
+#   domain_name            = var.domain_name
+#   environment            = var.environment
+#   private_key_path       = var.private_key_path
+#   certificate_path       = var.certificate_path
+#   certificate_chain_path = var.certificate_chain_path
+#   tags = {
+#     Environment = var.environment
+#   }
+# }
 
 # ECR Module
 module "ecr" {
   source = "./modules/ecr"
 
   environment = var.environment
-  project    = var.project
+  project     = var.project
 }
 
 # ALB Module
@@ -69,26 +69,30 @@ module "alb" {
   vpc_id            = module.network.vpc_id
   public_subnet_ids = module.network.public_subnets
   security_group_id = module.security.alb_security_group_id
-  certificate_arn   = module.acm.certificate_arn
+  certificate_arn   = var.certificate_arn
   domain_name       = var.domain_name
+  ec2_instance1_id  = module.ec2.instances[0].id
+  ec2_instance2_id  = module.ec2.instances[1].id
 }
 
 # EC2 Instances Module
 module "ec2" {
   source = "./modules/ec2"
 
-  environment         = var.environment
-  project            = var.project
-  vpc_id             = module.network.vpc_id
-  private_subnet_ids = module.network.private_subnets
-  security_group_id  = module.security.ec2_security_group_id
-  instance_type      = var.instance_type
-  domain_name        = var.domain_name
-  ecr_url           = module.ecr.repository_url
-  acm_certificate_arn = module.acm.certificate_arn
+  environment            = var.environment
+  project                = var.project
+  vpc_id                 = module.network.vpc_id
+  private_subnet_ids     = module.network.private_subnets
+  security_group_id      = module.security.ec2_security_group_id
+  instance_type          = var.instance_type
+  domain_name            = var.domain_name
+  ecr_url                = module.ecr.repository_url
+  private_key_path       = var.private_key_path
+  certificate_chain_path = var.certificate_chain_path
+  nat_gateway_id         = module.network.nat_gateway_id
   alb_target_group_arns = [
-    module.alb.docker_target_group_arn,
-    module.alb.instance_target_group_arn
+    module.alb.instance_target_group_arn,
+    module.alb.docker_target_group_arn
   ]
 }
 
@@ -108,7 +112,7 @@ module "ec2" {
 module "cloudwatch" {
   source = "./modules/cloudwatch"
 
-  environment    = var.environment
+  environment   = var.environment
   project       = var.project
   ec2_instances = module.ec2.instances
 } 

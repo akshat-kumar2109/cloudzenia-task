@@ -1,8 +1,7 @@
 #!/bin/bash
 
-# Enable debug mode and error handling
+set -euo pipefail
 set -x
-set -e
 
 # Update system packages
 apt-get update
@@ -23,242 +22,127 @@ echo \
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin nginx awscli
 
-# Start and enable Docker
-systemctl start docker
+# Enable and start Docker
 systemctl enable docker
+systemctl start docker
 
-# Verify Docker is running
-docker --version
-systemctl status docker
+# Verify Docker
+docker version || { echo "Docker failed to start"; exit 1; }
 
-# Create a simple Node.js application for Docker
+# Create Node.js App
 mkdir -p /app
-cat > /app/server.js << 'EOL'
+cat > /app/server.js << 'EOF'
 const http = require('http');
-
 const server = http.createServer((req, res) => {
-    console.log('Received request:', req.method, req.url, req.headers);
+    console.log('Request:', req.method, req.url, req.headers);
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Namaste from Container');
 });
-
 server.listen(8080, '0.0.0.0', () => {
     console.log('Server running on port 8080');
 });
-EOL
+EOF
 
-cat > /app/Dockerfile << 'EOL'
+cat > /app/Dockerfile << 'EOF'
 FROM node:16-alpine
 WORKDIR /app
 COPY server.js .
 EXPOSE 8080
 CMD ["node", "server.js"]
-EOL
+EOF
 
-# Build and run Docker container
+# Build and run container
 cd /app
 docker build -t node-app .
-docker run -d -p 8080:8080 --name node-app --restart always node-app
+docker run -d -p 8080:8080 --name node-app --restart always node-app || echo "Container may already be running"
 
-# Verify container is running
-docker ps
-curl -v http://localhost:8080/
+# Terraform variables
+instance_number=${instance_number}
+domain_name=${domain_name}
+ecr_url=${ecr_url}
+aws_region=${aws_region}
 
-# Stop NGINX if running
-systemctl stop nginx
+# Cert creation
+mkdir -p /etc/letsencrypt/live/${domain_name}
+echo '${private_key}' > /etc/letsencrypt/live/${domain_name}/privkey.pem
+echo '${certificate}' > /etc/letsencrypt/live/${domain_name}/fullchain.pem
+chmod 600 /etc/letsencrypt/live/${domain_name}/*.pem
 
-# Create directories for certificates
-mkdir -p /etc/nginx/certs
-cd /etc/nginx/certs
-
-# Download the certificates from ACM (using the instance role)
-aws acm get-certificate --certificate-arn ${acm_certificate_arn} --region ${aws_region} | jq -r '.Certificate' > server.crt
-aws acm get-certificate --certificate-arn ${acm_certificate_arn} --region ${aws_region} | jq -r '.CertificateChain' > chain.crt
-aws acm get-certificate --certificate-arn ${acm_certificate_arn} --region ${aws_region} | jq -r '.PrivateKey' > server.key
-
-# Combine certificate and chain for NGINX
-cat server.crt chain.crt > fullchain.crt
-
-# Set proper permissions
-chmod 600 server.key
-chmod 644 fullchain.crt
-
-# Remove default NGINX configuration
-rm -f /etc/nginx/sites-enabled/default
-
-# Configure NGINX
-cat > /etc/nginx/nginx.conf << 'EOL'
-user www-data;
-worker_processes auto;
-error_log /var/log/nginx/error.log debug;
-pid /run/nginx.pid;
-
-events {
-    worker_connections 1024;
-}
-
-http {
-    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
-                      '$status $body_bytes_sent "$http_referer" '
-                      '"$http_user_agent" "$http_x_forwarded_for"';
-
-    access_log  /var/log/nginx/access.log  main;
-
-    sendfile            on;
-    tcp_nopush          on;
-    tcp_nodelay         on;
-    keepalive_timeout   65;
-    types_hash_max_size 4096;
-
-    include             /etc/nginx/mime.types;
-    default_type        application/octet-stream;
-
-    # SSL configuration
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers off;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
-    ssl_session_tickets off;
-    ssl_stapling on;
-    ssl_stapling_verify on;
-
-    include /etc/nginx/conf.d/*.conf;
-}
-EOL
-
-# Create NGINX server configuration
-cat > /etc/nginx/conf.d/default.conf << 'EOL'
-# Default server to redirect HTTP to HTTPS
+# NGINX configuration
+cat > /etc/nginx/sites-available/ec2-instance${instance_number}.${domain_name} <<EOF
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-    return 301 https://$host$request_uri;
-}
+    listen 80;
+    server_name ec2-instance${instance_number}.${domain_name} ec2-alb-instance.${domain_name};
 
-# Instance server (direct)
-server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    server_name ec2-instance${instance_number}.${domain_name};
-
-    ssl_certificate /etc/nginx/certs/fullchain.crt;
-    ssl_certificate_key /etc/nginx/certs/server.key;
-
-    access_log /var/log/nginx/instance.access.log main;
-    error_log /var/log/nginx/instance.error.log debug;
+    root /var/www/html;
+    index index.html;
 
     location / {
-        add_header Content-Type text/plain;
-        return 200 'Hello from Instance';
     }
 }
-
-# Docker server (direct)
 server {
     listen 443 ssl;
-    listen [::]:443 ssl;
-    server_name ec2-docker${instance_number}.${domain_name};
+    server_name ec2-instance${instance_number}.${domain_name} ec2-alb-instance.${domain_name};
 
-    ssl_certificate /etc/nginx/certs/fullchain.crt;
-    ssl_certificate_key /etc/nginx/certs/server.key;
+    ssl_certificate /etc/letsencrypt/live/${domain_name}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${domain_name}/privkey.pem;
 
-    access_log /var/log/nginx/docker.access.log main;
-    error_log /var/log/nginx/docker.error.log debug;
+    root /var/www/html;
+    index index.html;
 
     location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60;
-        proxy_connect_timeout 60;
-        proxy_send_timeout 60;
     }
 }
+EOF
 
-# ALB Instance server
+cat > /etc/nginx/sites-available/ec2-docker${instance_number}.${domain_name} <<EOF
+server {
+    listen 80;
+    server_name ec2-docker${instance_number}.${domain_name} ec2-alb-docker.${domain_name};
+
+    location / {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host ec2-docker${instance_number}.${domain_name};
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+}
 server {
     listen 443 ssl;
-    listen [::]:443 ssl;
-    server_name ec2-alb-instance.${domain_name};
+    server_name ec2-docker${instance_number}.${domain_name} ec2-alb-docker.${domain_name};
 
-    ssl_certificate /etc/nginx/certs/fullchain.crt;
-    ssl_certificate_key /etc/nginx/certs/server.key;
-
-    access_log /var/log/nginx/alb-instance.access.log main;
-    error_log /var/log/nginx/alb-instance.error.log debug;
+    ssl_certificate /etc/letsencrypt/live/${domain_name}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${domain_name}/privkey.pem;
 
     location / {
-        add_header Content-Type text/plain;
-        return 200 'Hello from Instance';
+        proxy_pass https://localhost:8080;
+        proxy_set_header Host ec2-docker${instance_number}.${domain_name};
+        proxy_set_header X-Real-IP \$remote_addr;
     }
 }
+EOF
 
-# ALB Docker server
-server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    server_name ec2-alb-docker.${domain_name};
+# Enable NGINX sites
+ln -sf /etc/nginx/sites-available/ec2-instance${instance_number}.${domain_name} /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/ec2-docker${instance_number}.${domain_name} /etc/nginx/sites-enabled/
 
-    ssl_certificate /etc/nginx/certs/fullchain.crt;
-    ssl_certificate_key /etc/nginx/certs/server.key;
+# Create web root
+mkdir -p /var/www/html
+cat > /var/www/html/index.html <<EOF
+<!DOCTYPE html>
+<html>
+<head><title>Instance ${instance_number}</title></head>
+<body><h1>Hello from Instance ${instance_number}</h1></body>
+</html>
+EOF
 
-    access_log /var/log/nginx/alb-docker.access.log main;
-    error_log /var/log/nginx/alb-docker.error.log debug;
+rm -rf /etc/nginx/sites-enabled/default
 
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60;
-        proxy_connect_timeout 60;
-        proxy_send_timeout 60;
-    }
-}
-EOL
+# Validate NGINX and restart
+nginx -t && systemctl restart nginx
 
-# Replace placeholders
-sed -i "s/\${instance_number}/${instance_number}/g" /etc/nginx/conf.d/default.conf
-sed -i "s/\${domain_name}/${domain_name}/g" /etc/nginx/conf.d/default.conf
-
-# Create log directories
-mkdir -p /var/log/nginx
-chown -R www-data:www-data /var/log/nginx
-
-# Test NGINX configuration
-nginx -t
-
-# Start NGINX
-systemctl enable nginx
-systemctl restart nginx
-
-# Verify services are running
-echo "Verifying services..."
-systemctl status nginx
-docker ps
-netstat -tlpn | grep -E ":(80|8080)"
-
-# Test endpoints
-echo "Testing endpoints..."
-curl -v -H "Host: ec2-instance${instance_number}.${domain_name}" http://localhost/
-curl -v -H "Host: ec2-docker${instance_number}.${domain_name}" http://localhost/
-
-# Configure CloudWatch agent
+# CloudWatch Agent Config
 mkdir -p /opt/aws/amazon-cloudwatch-agent/etc
-cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'EOL'
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'EOF'
 {
     "agent": {
         "metrics_collection_interval": 60,
@@ -285,33 +169,13 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'EOL'
             "files": {
                 "collect_list": [
                     {
-                        "file_path": "/var/log/nginx/default.access.log",
-                        "log_group_name": "/ec2/nginx/default.access.log",
+                        "file_path": "/var/log/nginx/access.log",
+                        "log_group_name": "/ec2/nginx/access.log",
                         "log_stream_name": "$${aws:InstanceId}"
                     },
                     {
-                        "file_path": "/var/log/nginx/default.error.log",
-                        "log_group_name": "/ec2/nginx/default.error.log",
-                        "log_stream_name": "$${aws:InstanceId}"
-                    },
-                    {
-                        "file_path": "/var/log/nginx/instance.access.log",
-                        "log_group_name": "/ec2/nginx/instance.access.log",
-                        "log_stream_name": "$${aws:InstanceId}"
-                    },
-                    {
-                        "file_path": "/var/log/nginx/instance.error.log",
-                        "log_group_name": "/ec2/nginx/instance.error.log",
-                        "log_stream_name": "$${aws:InstanceId}"
-                    },
-                    {
-                        "file_path": "/var/log/nginx/docker.access.log",
-                        "log_group_name": "/ec2/nginx/docker.access.log",
-                        "log_stream_name": "$${aws:InstanceId}"
-                    },
-                    {
-                        "file_path": "/var/log/nginx/docker.error.log",
-                        "log_group_name": "/ec2/nginx/docker.error.log",
+                        "file_path": "/var/log/nginx/error.log",
+                        "log_group_name": "/ec2/nginx/error.log",
                         "log_stream_name": "$${aws:InstanceId}"
                     }
                 ]
@@ -319,20 +183,14 @@ cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'EOL'
         }
     }
 }
-EOL
+EOF
 
-# Install CloudWatch agent
-wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+# Install and start CloudWatch Agent
+wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
 dpkg -i -E ./amazon-cloudwatch-agent.deb
 
-# Start CloudWatch agent
-/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
 systemctl enable amazon-cloudwatch-agent
 systemctl restart amazon-cloudwatch-agent
-
-# Final verification
-echo "Setup complete. Final verification..."
-ps aux | grep nginx
-ps aux | grep docker
-netstat -tlpn | grep -E ":(80|8080)"
-curl -v http://localhost:8080/ 

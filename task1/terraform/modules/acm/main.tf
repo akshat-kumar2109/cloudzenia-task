@@ -1,16 +1,7 @@
-resource "aws_route53_zone" "main" {
-  name = var.domain_name
-
-  tags = merge({
-    Name        = "${var.domain_name}-zone"
-    Environment = var.environment
-  }, var.tags)
-}
-
 resource "aws_acm_certificate" "cert" {
-  private_key       = file(var.private_key_path)
-  certificate_body  = file(var.certificate_path)
-  certificate_chain = file(var.certificate_chain_path)
+  private_key       = file("${path.root}/certs/privkey.pem")
+  certificate_body  = file("${path.root}/certs/cert.pem")
+  certificate_chain = file("${path.root}/certs/fullchain.pem")
 
   tags = merge({
     Name        = "${var.domain_name}-certificate"

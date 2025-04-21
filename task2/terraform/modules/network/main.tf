@@ -63,6 +63,8 @@ resource "aws_nat_gateway" "main" {
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.public[0].id
 
+  depends_on = [aws_internet_gateway.main]
+
   tags = {
     Name        = "${var.project}-${var.environment}-nat"
     Environment = var.environment
@@ -78,6 +80,8 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.main.id
   }
 
+  depends_on = [aws_internet_gateway.main]
+
   tags = {
     Name        = "${var.project}-${var.environment}-public-rt"
     Environment = var.environment
@@ -91,6 +95,8 @@ resource "aws_route_table" "private" {
     cidr_block     = "0.0.0.0/0"
     nat_gateway_id = aws_nat_gateway.main.id
   }
+
+  depends_on = [aws_nat_gateway.main]
 
   tags = {
     Name        = "${var.project}-${var.environment}-private-rt"

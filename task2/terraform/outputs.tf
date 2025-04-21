@@ -34,7 +34,6 @@ output "alb_dns_name" {
 output "target_group_arns" {
   description = "ARNs of target groups"
   value = {
-    docker   = module.alb.docker_target_group_arn
     instance = module.alb.instance_target_group_arn
   }
 }
@@ -43,12 +42,6 @@ output "target_group_arns" {
 output "ecr_repository_url" {
   description = "URL of the ECR repository"
   value       = module.ecr.repository_url
-}
-
-# ACM outputs
-output "certificate_arn" {
-  description = "ARN of the SSL certificate"
-  value       = module.acm.certificate_arn
 }
 
 # Route53 outputs

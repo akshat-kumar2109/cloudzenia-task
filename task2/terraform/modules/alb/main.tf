@@ -1,10 +1,10 @@
-# Application Load Balancer
+# ALB remains unchanged
 resource "aws_lb" "main" {
   name               = "${var.project}-${var.environment}-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [var.security_group_id]
-  subnets           = var.public_subnet_ids
+  subnets            = var.public_subnet_ids
 
   enable_deletion_protection = false
 
@@ -14,7 +14,7 @@ resource "aws_lb" "main" {
   }
 }
 
-# ALB Listener (HTTPS)
+# HTTPS Listener
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
@@ -33,7 +33,7 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-# HTTP to HTTPS redirect
+# HTTP → HTTPS Redirect
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
@@ -50,104 +50,150 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# Target Groups
-resource "aws_lb_target_group" "docker" {
-  name                 = "${var.project}-${var.environment}-docker-tg"
-  port                 = 80
-  protocol             = "HTTP"
-  vpc_id               = var.vpc_id
-  deregistration_delay = 30
+# Target Group for ec2-nginx-production-instance-1
+resource "aws_lb_target_group" "instance1" {
+  name     = "${var.project}-${var.environment}-instance1-tg"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = var.vpc_id
 
   health_check {
     enabled             = true
     healthy_threshold   = 2
     interval            = 30
-    matcher            = "200,302,404"
-    path               = "/"
-    port               = "traffic-port"
-    protocol           = "HTTP"
-    timeout            = 10
+    matcher             = "200,302,404"
+    path                = "/"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 10
     unhealthy_threshold = 5
   }
 
   stickiness {
     type            = "lb_cookie"
     cookie_duration = 86400
-    enabled         = true
+    enabled         = false
   }
 
   tags = {
-    Name        = "${var.project}-${var.environment}-docker-tg"
+    Name        = "${var.project}-${var.environment}-instance1-tg"
     Environment = var.environment
   }
 }
 
-resource "aws_lb_target_group" "instance" {
-  name                 = "${var.project}-${var.environment}-instance-tg"
-  port                 = 80
-  protocol             = "HTTP"
-  vpc_id               = var.vpc_id
-  deregistration_delay = 30
+# Target Group for ec2-nginx-production-instance-2
+resource "aws_lb_target_group" "instance2" {
+  name     = "${var.project}-${var.environment}-instance2-tg"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = var.vpc_id
 
   health_check {
     enabled             = true
     healthy_threshold   = 2
     interval            = 30
-    matcher            = "200,302,404"
-    path               = "/"
-    port               = "traffic-port"
-    protocol           = "HTTP"
-    timeout            = 10
+    matcher             = "200,302,404"
+    path                = "/"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 10
     unhealthy_threshold = 5
   }
 
   stickiness {
     type            = "lb_cookie"
     cookie_duration = 86400
-    enabled         = true
+    enabled         = false
   }
 
   tags = {
-    Name        = "${var.project}-${var.environment}-instance-tg"
+    Name        = "${var.project}-${var.environment}-instance2-tg"
     Environment = var.environment
   }
 }
 
-# Listener Rules for HTTPS
-resource "aws_lb_listener_rule" "docker_https" {
+# Register instances to target groups
+resource "aws_lb_target_group_attachment" "instance1_attachment" {
+  target_group_arn = aws_lb_target_group.instance1.arn
+  target_id        = var.ec2_instance1_id
+  port             = 80
+}
+
+resource "aws_lb_target_group_attachment" "instance2_attachment" {
+  target_group_arn = aws_lb_target_group.instance2.arn
+  target_id        = var.ec2_instance2_id
+  port             = 80
+}
+
+# HTTPS Routing Rules
+
+resource "aws_lb_listener_rule" "instance1_https" {
   listener_arn = aws_lb_listener.https.arn
   priority     = 1
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.docker.arn
+    target_group_arn = aws_lb_target_group.instance1.arn
   }
 
   condition {
     host_header {
       values = [
-        "ec2-docker*.${var.domain_name}",
-        "ec2-alb-docker.${var.domain_name}"
+        "ec2-instance1.${var.domain_name}",
+        "ec2-docker1.${var.domain_name}"
       ]
     }
   }
 }
 
-resource "aws_lb_listener_rule" "instance_https" {
+resource "aws_lb_listener_rule" "instance2_https" {
   listener_arn = aws_lb_listener.https.arn
   priority     = 2
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.instance.arn
+    target_group_arn = aws_lb_target_group.instance2.arn
   }
 
   condition {
     host_header {
       values = [
-        "ec2-instance*.${var.domain_name}",
-        "ec2-alb-instance.${var.domain_name}"
+        "ec2-instance2.${var.domain_name}",
+        "ec2-docker2.${var.domain_name}"
       ]
     }
   }
-} 
+}
+
+resource "aws_lb_listener_rule" "nginx" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.instance1.arn
+  }
+
+  condition {
+    host_header {
+      values = ["ec2-alb-instance.${var.domain_name}"]
+    }
+  }
+}
+
+# HTTPS Listener Rule - Docker (ec2-alb-docker subdomain)
+resource "aws_lb_listener_rule" "docker" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 110
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.instance1.arn
+  }
+
+  condition {
+    host_header {
+      values = ["ec2-alb-docker.${var.domain_name}"]
+    }
+  }
+}

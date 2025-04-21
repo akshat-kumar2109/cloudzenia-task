@@ -61,7 +61,7 @@ variable "secrets_policy_json" {
 }
 
 variable "rds_secret_arn" {
-  description = "ARN of the RDS secret"
+  description = "ARN of the Secrets Manager secret containing RDS credentials"
   type        = string
 }
 

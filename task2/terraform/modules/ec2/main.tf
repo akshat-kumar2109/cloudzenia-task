@@ -21,14 +21,17 @@ resource "aws_instance" "main" {
     instance_number      = count.index + 1
     domain_name         = var.domain_name
     ecr_url            = var.ecr_url
-    acm_certificate_arn = var.acm_certificate_arn
     aws_region         = data.aws_region.current.name
+    private_key       = file("/home/akshat/Desktop/cloudzenia-task/task2/terraform/certs/privkey.pem")
+    certificate = file("/home/akshat/Desktop/cloudzenia-task/task2/terraform/certs/fullchain.pem")
   })
 
   root_block_device {
     volume_size = 20
     volume_type = "gp3"
   }
+
+  depends_on = [var.nat_gateway_id] # Ensure NAT Gateway is ready
 
   tags = {
     Name        = "${var.project}-${var.environment}-instance-${count.index + 1}"
@@ -153,18 +156,10 @@ resource "aws_iam_instance_profile" "instance_profile" {
   role = aws_iam_role.instance_role.name
 }
 
-# Target Group Attachments for Docker
-resource "aws_lb_target_group_attachment" "docker" {
-  count            = 2
-  target_group_arn = var.alb_target_group_arns[0]  # Docker target group
-  target_id        = aws_instance.main[count.index].id
-  port             = 80
-}
-
 # Target Group Attachments for Instance
 resource "aws_lb_target_group_attachment" "instance" {
   count            = 2
-  target_group_arn = var.alb_target_group_arns[1]  # Instance target group
+  target_group_arn = var.alb_target_group_arns[0]  # Instance target group
   target_id        = aws_instance.main[count.index].id
   port             = 80
 } 

@@ -100,6 +100,11 @@ resource "aws_iam_role_policy" "secrets_access" {
   policy = var.secrets_policy_json
 }
 
+# Data source for RDS secret
+data "aws_secretsmanager_secret_version" "rds" {
+  secret_id = var.rds_secret_arn
+}
+
 # WordPress Task Definition
 resource "aws_ecs_task_definition" "wordpress" {
   family                   = "${local.name}-wordpress"
@@ -117,27 +122,35 @@ resource "aws_ecs_task_definition" "wordpress" {
       portMappings = [
         {
           containerPort = var.wordpress_container_port
-          protocol      = "tcp"
+          hostPort     = var.wordpress_container_port
+          protocol     = "tcp"
         }
       ]
-      secrets = [
+      environment = [
         {
-          name      = "WORDPRESS_DB_USER"
-          valueFrom = "${var.rds_secret_arn}:username::"
+          name  = "WORDPRESS_DB_HOST"
+          value = jsondecode(data.aws_secretsmanager_secret_version.rds.secret_string)["host"]
         },
         {
-          name      = "WORDPRESS_DB_PASSWORD"
-          valueFrom = "${var.rds_secret_arn}:password::"
+          name  = "WORDPRESS_DB_USER"
+          value = jsondecode(data.aws_secretsmanager_secret_version.rds.secret_string)["username"]
         },
         {
-          name      = "WORDPRESS_DB_NAME"
-          valueFrom = "${var.rds_secret_arn}:dbname::"
+          name  = "WORDPRESS_DB_PASSWORD"
+          value = jsondecode(data.aws_secretsmanager_secret_version.rds.secret_string)["password"]
         },
         {
-          name      = "WORDPRESS_DB_HOST"
-          valueFrom = "${var.rds_secret_arn}:host::"
+          name  = "WORDPRESS_DB_NAME"
+          value = jsondecode(data.aws_secretsmanager_secret_version.rds.secret_string)["dbname"]
         }
       ]
+      healthCheck = {
+        command     = ["CMD-SHELL", "curl -f http://localhost:${var.wordpress_container_port}/wp-admin/install.php || exit 1"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 120
+      }
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -146,6 +159,7 @@ resource "aws_ecs_task_definition" "wordpress" {
           "awslogs-stream-prefix" = "wordpress"
         }
       }
+      essential = true
     }
   ])
 
@@ -173,9 +187,17 @@ resource "aws_ecs_task_definition" "microservice" {
       portMappings = [
         {
           containerPort = var.microservice_container_port
-          protocol      = "tcp"
+          hostPort     = var.microservice_container_port
+          protocol     = "tcp"
         }
       ]
+      healthCheck = {
+        command     = ["CMD-SHELL", "curl -f http://localhost:${var.microservice_container_port}/ || exit 1"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 120
+      }
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -184,6 +206,7 @@ resource "aws_ecs_task_definition" "microservice" {
           "awslogs-stream-prefix" = "microservice"
         }
       }
+      essential = true
     }
   ])
 
@@ -201,6 +224,7 @@ resource "aws_ecs_service" "wordpress" {
   task_definition = aws_ecs_task_definition.wordpress.arn
   desired_count   = var.wordpress_desired_count
   launch_type     = "FARGATE"
+  health_check_grace_period_seconds = 120
 
   network_configuration {
     subnets          = var.subnet_ids
@@ -233,6 +257,7 @@ resource "aws_ecs_service" "microservice" {
   task_definition = aws_ecs_task_definition.microservice.arn
   desired_count   = var.microservice_desired_count
   launch_type     = "FARGATE"
+  health_check_grace_period_seconds = 120
 
   network_configuration {
     subnets          = var.subnet_ids

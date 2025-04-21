@@ -64,3 +64,8 @@ variable "my_ip_cidr" {
   description = "Your IP address in CIDR notation (e.g., 1.2.3.4/32)"
   type        = string
 } 
+
+variable "certificate_arn" {
+  description = "ARN of the SSL certificate"
+  type        = string
+}

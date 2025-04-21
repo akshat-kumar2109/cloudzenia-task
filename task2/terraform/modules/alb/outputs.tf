@@ -8,12 +8,12 @@ output "alb_zone_id" {
   value       = aws_lb.main.zone_id
 }
 
-output "docker_target_group_arn" {
-  description = "ARN of the Docker target group"
-  value       = aws_lb_target_group.docker.arn
-}
-
 output "instance_target_group_arn" {
   description = "ARN of the Instance target group"
-  value       = aws_lb_target_group.instance.arn
-} 
+  value       = aws_lb_target_group.instance1.arn
+}
+
+output "docker_target_group_arn" {
+  description = "ARN of the Docker target group"
+  value       = aws_lb_target_group.instance2.arn
+}

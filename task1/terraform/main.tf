@@ -127,7 +127,7 @@ module "alb" {
 
 # ECS Module
 module "ecs" {
-  depends_on = [null_resource.docker_build_push, null_resource.rebuild_microservice]
+  depends_on = [null_resource.docker_build_push, null_resource.rebuild_microservice, module.secrets]
   source = "./modules/ecs"
 
   environment       = var.environment
@@ -173,11 +173,11 @@ module "acm" {
   }
 }
 
-module "route53" {
-  source = "./modules/route53"
+# module "route53" {
+#   source = "./modules/route53"
 
-  domain_name   = var.domain_name
-  environment   = var.environment
-  alb_dns_name = module.alb.alb_dns_name
-  alb_zone_id  = module.alb.alb_zone_id
-}
+#   domain_name   = var.domain_name
+#   environment   = var.environment
+#   alb_dns_name = module.alb.alb_dns_name
+#   alb_zone_id  = module.alb.alb_zone_id
+# }
