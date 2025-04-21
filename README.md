@@ -93,7 +93,6 @@ task2/
 │   ├── modules/     # Terraform modules
 │   └── main.tf      # Main configuration
 ├── app/             # Application files
-│   └── nginx/       # NGINX configurations
 └── README.md        # Detailed setup instructions
 ```
 
